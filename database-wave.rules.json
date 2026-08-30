@@ -1,0 +1,152 @@
+{
+  "rules": {
+
+    // ── Co-Host system ────────────────────────────────────────────────
+    // settings: written only by the host (uid == $liveId is the host UID).
+    // requests: viewers request to join — writer must be themselves.
+    // active/removed: controlled by the host or the user themselves.
+    "cohosts": {
+      "$liveId": {
+        "settings": {
+          ".read":  "auth != null",
+          ".write": "auth != null && auth.uid == $liveId"
+        },
+        "requests": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        },
+        "active": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && (auth.uid == $liveId || auth.uid == $uid)"
+          }
+        },
+        "removed": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && (auth.uid == $liveId || auth.uid == $uid)"
+          }
+        }
+      }
+    },
+
+    // ── Live Rooms ────────────────────────────────────────────────────
+    // Room metadata is keyed by roomId (NOT a uid). Any authenticated user
+    // can read; only the host (identified via room.hostId) can write.
+    // Since RTDB rules cannot do cross-path reads, we restrict writes to
+    // authenticated non-anonymous users and rely on Firestore liveRooms
+    // rules (which do enforce hostId ownership) as the authoritative gate.
+    // Anonymous signaling/presence writes go through the signaling paths.
+    "liveRooms": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.token.firebase.sign_in_provider != 'anonymous'"
+      }
+    },
+
+    // ── WebRTC signaling ──────────────────────────────────────────────
+    // Scoped by roomId. Any authenticated user may read/write because both
+    // host and viewers need to exchange offers, answers, and ICE candidates.
+    // Anonymous viewers are permitted here since WebRTC requires signaling
+    // before the stream can start.
+    "liveSignaling": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── Viewer + host presence ────────────────────────────────────────
+    // Any authenticated user may update their own presence node.
+    // Reading the full room presence requires auth.
+    "livePresence": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── WebRTC signaling (legacy live.js) ─────────────────────────────
+    "liveConnections": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── Guest box requests ────────────────────────────────────────────
+    // A viewer requests to join as a guest by writing under their own UID.
+    // The host writes status updates (accept/decline) for any request in the room.
+    "guestRequests": {
+      "$roomId": {
+        ".read":  "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid == $uid"
+        },
+        "hostResponse": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    // ── Guest WebRTC signaling ────────────────────────────────────────
+    "guestSignaling": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── Guest presence ────────────────────────────────────────────────
+    "liveGuests": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── Guest→viewer relay signaling ──────────────────────────────────
+    "guestViewerSignaling": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    // ── User presence ─────────────────────────────────────────────────
+    // Each user can only write their own presence node.
+    "presence": {
+      "$uid": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+
+    // ── Per-user live status ──────────────────────────────────────────
+    "userLive": {
+      "$uid": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+
+    // ── Online presence ───────────────────────────────────────────────
+    "users": {
+      "$uid": {
+        ".read":  "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+
+    // ── Guest Signal (live.js co-host relay) ──────────────────────────
+    "liveSignal": {
+      "$roomId": {
+        ".read":  "auth != null",
+        ".write": "auth != null"
+      }
+    }
+
+  }
+}

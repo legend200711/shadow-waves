@@ -1,0 +1,24 @@
+{
+  "name": "shadowfirelive",
+  "version": "1.0.0",
+  "description": "",
+  "main": "album.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://waveshadownexussocial.online"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://waveshadownexussocial.online"
+  },
+  "homepage": "https://waveshadownexussocial.online",
+  "devDependencies": {
+    "@google-cloud/storage": "^8.0.1",
+    "google-auth-library": "^11.0.2"
+  }
+}
