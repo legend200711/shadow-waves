@@ -922,6 +922,14 @@ const db   = getFirestore(app);
 /* ── Cloudflare R2 Worker — all media storage lives here ── */
 const R2_WORKER_URL = 'https://shadow-nexus-wave.nthntjrn.workers.dev';
 
+// ── Structured logging ──────────────────────────────────────────────────────────
+const LOG = {
+  auth:   (...a) => console.log('[Wave Auth]',    ...a),
+  upload: (...a) => console.log('[Wave Upload]',  ...a),
+  avatar: (...a) => console.log('[Wave Avatar]',  ...a),
+  error:  (...a) => console.error('[Wave Settings]', ...a),
+};
+
 const $  = id => document.getElementById(id);
 const toast = (msg, dur = 3000) => {
   const t = $('sfl-toast');
@@ -1135,12 +1143,16 @@ $('privacyBack').addEventListener('click', () => {
   });
 })();
 
-/* ── SW version ── */
+/* ── App + SW version display ── */
+const _SNW_APP_VERSION = '2026.09.23-global-repair';
+if ($('settingsVersion')) {
+  $('settingsVersion').textContent = `v${_SNW_APP_VERSION}`;
+}
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.ready.then(reg => reg.active?.postMessage({ type: 'GET_VERSION' }));
   navigator.serviceWorker.addEventListener('message', e => {
     if (e.data?.type === 'SW_VERSION' && $('settingsVersion')) {
-      $('settingsVersion').textContent = `Version 1.0.0 · Cache ${e.data.version}`;
+      $('settingsVersion').textContent = `v${_SNW_APP_VERSION} · Cache ${e.data.version}`;
     }
   });
 }

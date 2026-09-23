@@ -34,9 +34,11 @@ rules_version = '2';
 //   /creatorEarnings/{uid}         — creator accumulated earnings
 //   /creatorPayouts/{id}           — cash-out requests
 //   /paypalAccounts/{uid}          — creator PayPal connection
-//   /testUsers/{accountId}         — test accounts (dev only)
-//   /testPosts/{postId}            — test posts (dev only)
-//   /founderStats/{docId}          — founder-only platform stats
+//   /testUsers/{accountId}                — test accounts (dev only)
+//   /testPosts/{postId}                   — test posts (dev only)
+//   /founderStats/{docId}                 — founder-only platform stats
+//   /profileMusic/{songId}                — profile music songs (Wave music system)
+//   /profilePlaylists/{plId}              — profile playlists (Wave music system)
 //
 
 service cloud.firestore {
@@ -526,6 +528,73 @@ service cloud.firestore {
       allow delete: if isSignedIn()
         && (resource.data.authorId == request.auth.uid || isFounder());
       allow update: if false;
+    }
+
+    // ── Profile Music ────────────────────────────────────────────────────────
+    //
+    //   /profileMusic/{songId}
+    //   Fields: ownerUid, ownerId, userId (legacy), title, artist, album,
+    //           musicUrl (or downloadURL/url), artUrl, visibility, uploadedAt
+    //
+    // Public songs are readable by everyone (for profile page music player).
+    // Only the owner may upload/edit/delete their own songs.
+
+    match /profileMusic/{songId} {
+      // Public songs are readable without auth (profile page music player).
+      // Private songs are readable only by the owner.
+      allow read: if resource == null
+        || resource.data.visibility == 'public'
+        || isSignedIn() && (
+             resource.data.ownerUid == request.auth.uid
+          || resource.data.ownerId  == request.auth.uid
+          || resource.data.userId   == request.auth.uid
+        )
+        || isModerator();
+
+      // Only a signed-in non-anonymous user may upload their own songs.
+      allow create: if isSignedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && (
+             request.resource.data.ownerUid == request.auth.uid
+          || request.resource.data.ownerId  == request.auth.uid
+        );
+
+      allow update: if isSignedIn()
+        && (
+             resource.data.ownerUid == request.auth.uid
+          || resource.data.ownerId  == request.auth.uid
+          || resource.data.userId   == request.auth.uid
+        );
+
+      allow delete: if isSignedIn()
+        && (
+             resource.data.ownerUid == request.auth.uid
+          || resource.data.ownerId  == request.auth.uid
+          || resource.data.userId   == request.auth.uid
+          || isFounder()
+        );
+    }
+
+    // ── Profile Playlists ────────────────────────────────────────────────────
+    //
+    //   /profilePlaylists/{plId}
+    //   Fields: ownerUid, name, songIds, visibility, createdAt
+
+    match /profilePlaylists/{plId} {
+      allow read: if resource == null
+        || resource.data.visibility == 'public'
+        || isSignedIn() && resource.data.ownerUid == request.auth.uid
+        || isModerator();
+
+      allow create: if isSignedIn()
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerUid == request.auth.uid;
+
+      allow delete: if isSignedIn()
+        && (resource.data.ownerUid == request.auth.uid || isFounder());
     }
 
   }

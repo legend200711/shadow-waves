@@ -170,18 +170,52 @@
     return _audio;
   }
 
+  // ── Structured logging ─────────────────────────────────────────────────────────
+  const LOG = {
+    music:    (...a) => console.log('[Wave Music]',    ...a),
+    playlist: (...a) => console.log('[Wave Playlist]', ...a),
+    avatar:   (...a) => console.log('[Wave Avatar]',   ...a),
+    error:    (...a) => console.error('[Wave Music]',  ...a),
+  };
+
   // ── Firebase helpers ──────────────────────────────────────────
   // These are set by the Firebase module script in index.html.
   // We read them lazily (at call-time) so we never capture stale undefined.
+  // Two possible patterns:
+  //   A. window._snxFirestore contains Firestore function imports, window._snxDb is the db instance
+  //   B. window._snxWaveDb is the Firestore instance directly (newer pages)
   function fs() {
     const f = window._snxFirestore;
-    if (!f) throw new Error('Firestore not ready. Please wait a moment and try again.');
+    if (!f) {
+      // Pattern B: try to construct a minimal shim from the global Firestore instance
+      if (window._snxWaveDb) return _buildFirestoreShim();
+      LOG.error('Firestore functions not ready — window._snxFirestore is undefined. Is firebase-config-wave.js loaded?');
+      throw new Error('Firestore not ready. Please wait a moment and try again.');
+    }
     return f;
   }
   function db() {
-    const d = window._snxDb;
-    if (!d) throw new Error('Firestore DB not ready.');
+    const d = window._snxDb || window._snxWaveDb;
+    if (!d) {
+      LOG.error('Firestore DB instance not ready — window._snxDb is undefined.');
+      throw new Error('Firestore DB not ready.');
+    }
     return d;
+  }
+
+  // ── Build a minimal Firestore shim when only the DB instance is available ─────
+  // This allows profile-music.js to work with pages that expose window._snxWaveDb
+  // but not the full window._snxFirestore function bundle.
+  function _buildFirestoreShim() {
+    // Lazily import from the CDN — only called if _snxFirestore is missing.
+    // We can't use static import inside the IIFE, so we use dynamic import.
+    if (!window.__snxFsShimPromise) {
+      window.__snxFsShimPromise = import('https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js')
+        .then(mod => { window._snxFirestore = mod; LOG.music('Firestore shim loaded'); })
+        .catch(e => LOG.error('Firestore shim failed:', e.message));
+    }
+    // Return a safe no-op shim that throws a helpful error
+    throw new Error('Firestore module loading — please wait a moment and try again.');
   }
   // ── R2 upload via Cloudflare Worker ──────────────────────────────
   async function uploadToR2(r2Key, file, uid, onProgress) {

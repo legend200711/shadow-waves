@@ -452,6 +452,13 @@ import {
   deleteDoc
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
+// ── Structured logging ──────────────────────────────────────────────────────────
+const LOG = {
+  video:  (...a) => console.log('[Wave Video]',  ...a),
+  follow: (...a) => console.log('[Wave Follow]', ...a),
+  error:  (...a) => console.error('[Wave Video]', ...a),
+};
+
 // Track creator UID for follow operations
 let _creatorUid = null;
 
@@ -728,15 +735,18 @@ document.getElementById('btnFollow').addEventListener('click', async () => {
 
   const creatorRef = doc(db, 'users', creatorId);
   const myRef      = doc(db, 'users', _user.uid);
+  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} viewer=${_user.uid} creator=${creatorId}`);
   try {
     if (_following) {
-      await updateDoc(creatorRef, { followers: arrayRemove(_user.uid) });
-      await updateDoc(myRef,      { following: arrayRemove(creatorId) });
+      await updateDoc(creatorRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
+      await updateDoc(myRef,      { following: arrayRemove(creatorId),  followingCount: increment(-1) });
       _following = false;
+      LOG.follow('Unfollow complete');
     } else {
-      await updateDoc(creatorRef, { followers: arrayUnion(_user.uid) });
-      await updateDoc(myRef,      { following: arrayUnion(creatorId) });
+      await updateDoc(creatorRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
+      await updateDoc(myRef,      { following: arrayUnion(creatorId),  followingCount: increment(1) });
       _following = true;
+      LOG.follow('Follow complete');
 
       // Send follow notification
       const myName   = snxGetDisplayName(_userData, _user);
@@ -755,7 +765,8 @@ document.getElementById('btnFollow').addEventListener('click', async () => {
     }
     updateFollowBtn();
   } catch(e) {
-    toast('Error updating follow.');
+    LOG.error('Follow/unfollow error:', e.code, e.message);
+    toast(`Error updating follow. (${e.code || 'unknown'})`);
   } finally {
     btn.disabled = false;
   }

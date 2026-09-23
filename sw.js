@@ -17,7 +17,7 @@
 'use strict';
 
 /* ─── Version — bump this string to force a full cache refresh ─── */
-const CACHE_VERSION = 'snw-v1';
+const CACHE_VERSION = 'snw-v2026.09.23';
 const CACHE_NAME    = `snw-shell-${CACHE_VERSION}`;
 const MEDIA_CACHE   = `snw-media-${CACHE_VERSION}`;
 
@@ -53,6 +53,8 @@ const SHELL_FILES = [
   'script.js',
   'snx-net.js',
   'pwa-install.js',
+  'snw-config.js',
+  'snx-profile.js',
 
   /* PWA assets */
   'manifest.json',

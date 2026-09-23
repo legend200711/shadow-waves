@@ -916,7 +916,7 @@
     // Firestore /mediaFiles and resolves with the full { url, key } object
     // internally so callers that need r2Key can destructure it.
     function uploadFileToR2(file, onProgress) {
-        const R2_URL = 'https://yellow-term-11e6.nthntjrn.workers.dev';
+        const R2_URL = 'https://shadow-nexus-wave.nthntjrn.workers.dev'; // Wave worker — DO NOT use yellow-term-11e6 (Shadow Nexus Social)
         // Always use the live UID so the Cloudflare worker receives the correct owner.
         const uid    = (liveUser() || currentUser)?.uid || 'guest';
         const MAX_RETRIES = 3;

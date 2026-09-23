@@ -458,6 +458,14 @@ let _liveUnsub = null;
 let _videoUnsub = null;
 let _homePendingDeleteId = null, _homePendingDeleteData = null;
 
+// ── Structured logging ──────────────────────────────────────────────────────────
+const LOG = {
+  auth:   (...a) => console.log('[Wave Auth]',   ...a),
+  feed:   (...a) => console.log('[Wave Feed]',   ...a),
+  follow: (...a) => console.log('[Wave Follow]', ...a),
+  error:  (...a) => console.error('[Wave Home]', ...a),
+};
+
 /* ══════════════════════════════
    Utility helpers
    ══════════════════════════════ */

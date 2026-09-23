@@ -416,6 +416,13 @@ const db   = getFirestore(app);
 // ── Worker endpoint (keeps Cloudflare API token server-side only) ──
 const WORKER_URL = 'https://shadow-nexus-wave.nthntjrn.workers.dev';
 
+// ── Structured logging ──────────────────────────────────────────────────────────
+const LOG = {
+  upload: (...a) => console.log('[Wave Upload]', ...a),
+  auth:   (...a) => console.log('[Wave Auth]',   ...a),
+  error:  (...a) => console.error('[Wave Upload]', ...a),
+};
+
 const $ = id => document.getElementById(id);
 const toast = (msg, dur=3500) => {
   const t = $('sfl-toast'); t.textContent = msg;

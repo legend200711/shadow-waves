@@ -246,7 +246,7 @@ import { getAuth, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   getFirestore, collection, query, where, orderBy, limit,
-  getDocs, onSnapshot, doc, getDoc, updateDoc, arrayUnion, arrayRemove
+  getDocs, onSnapshot, doc, getDoc, updateDoc, arrayUnion, arrayRemove, increment
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const FIREBASE_CONFIG = {
@@ -273,6 +273,13 @@ let _searchTimer  = null;
 let _user         = null;
 // Track follow state for people shown in search results: uid → boolean
 let _followState  = {};
+
+// ── Structured logging ──────────────────────────────────────────────────────────
+const LOG = {
+  search: (...a) => console.log('[Wave Search]', ...a),
+  follow: (...a) => console.log('[Wave Follow]', ...a),
+  error:  (...a) => console.error('[Wave Search]', ...a),
+};
 
 function fmtNum(n){if(n>=1e6)return(n/1e6).toFixed(1).replace(/\.0$/,'')+'M';if(n>=1e3)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';return String(n||0);}
 function timeAgo(ts){if(!ts)return'';const d=ts.toDate?ts.toDate():new Date(ts);const s=(Date.now()-d.getTime())/1000;if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;}
@@ -458,28 +465,30 @@ async function handleFollowToggle(btn) {
   if(!uid || uid === _user.uid) return;
   btn.disabled = true;
   const wasFollowing = btn.classList.contains('is-following');
+  LOG.follow(`${wasFollowing ? 'Unfollow' : 'Follow'} viewer=${_user.uid} target=${uid}`);
   try {
     const targetRef = doc(db, 'users', uid);
     const myRef     = doc(db, 'users', _user.uid);
     if(wasFollowing) {
-      await updateDoc(targetRef, { followers: arrayRemove(_user.uid) });
-      await updateDoc(myRef,     { following: arrayRemove(uid) });
+      await updateDoc(targetRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
+      await updateDoc(myRef,     { following: arrayRemove(uid),        followingCount: increment(-1) });
       _followState[uid] = false;
       btn.textContent = 'Follow';
       btn.className   = 'sfl-btn sfl-btn-sm sfl-btn-primary srch-follow-btn';
-      btn.removeAttribute('aria-label');
       btn.setAttribute('aria-label', 'Follow');
+      LOG.follow('Unfollow complete');
     } else {
-      await updateDoc(targetRef, { followers: arrayUnion(_user.uid) });
-      await updateDoc(myRef,     { following: arrayUnion(uid) });
+      await updateDoc(targetRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
+      await updateDoc(myRef,     { following: arrayUnion(uid),        followingCount: increment(1) });
       _followState[uid] = true;
       btn.textContent = '✓ Following';
       btn.className   = 'sfl-btn sfl-btn-sm sfl-btn-outline srch-follow-btn is-following';
       btn.setAttribute('aria-label', 'Following — click to unfollow');
+      LOG.follow('Follow complete');
     }
   } catch(e) {
-    console.error('Follow toggle error:', e.code, e.message);
-    toast('Could not update follow. Please try again.');
+    LOG.error('Follow toggle error:', e.code, e.message);
+    toast(`Could not update follow. (${e.code || 'unknown'})`);
   } finally {
     btn.disabled = false;
   }
@@ -612,6 +621,19 @@ async function runSearch(rawQuery, filter) {
     if(filter === 'all' || filter === 'creators') {
       let peopleDocs = [];
 
+      // ── Direct UID lookup (when the query looks like a Firebase UID) ────────
+      // Firebase UIDs are 20–28 alphanumeric chars with no spaces.
+      const looksLikeUid = /^[A-Za-z0-9]{20,28}$/.test(trimmed);
+      if(looksLikeUid) {
+        try {
+          const uidDoc = await getDoc(doc(db, 'users', trimmed));
+          if(uidDoc.exists()) peopleDocs.push(uidDoc);
+          LOG.search('UID lookup for', trimmed, '→', uidDoc.exists() ? 'found' : 'not found');
+        } catch(uidErr) {
+          LOG.error('UID lookup failed:', uidErr.code);
+        }
+      }
+
       // Search by displayNameLower (case-insensitive) — preferred
       try {
         const dnLowerSnap = await getDocs(query(
@@ -621,9 +643,9 @@ async function runSearch(rawQuery, filter) {
           where('displayNameLower','<=', q_upper),
           limit(15)
         ));
-        peopleDocs = dnLowerSnap.docs;
+        peopleDocs = mergeDocs(peopleDocs, dnLowerSnap.docs);
       } catch(e1) {
-        console.warn('displayNameLower query failed, falling back:', e1.code);
+        LOG.error('displayNameLower query failed, falling back:', e1.code);
         // Fallback: original-case displayName
         try {
           const dnSnap = await getDocs(query(
@@ -633,9 +655,9 @@ async function runSearch(rawQuery, filter) {
             where('displayName','<=', trimmed + '\uf8ff'),
             limit(15)
           ));
-          peopleDocs = dnSnap.docs;
+          peopleDocs = mergeDocs(peopleDocs, dnSnap.docs);
         } catch(e2) {
-          console.warn('displayName fallback query failed:', e2.code, e2.message);
+          LOG.error('displayName fallback query failed:', e2.code, e2.message);
         }
       }
 
@@ -650,16 +672,18 @@ async function runSearch(rawQuery, filter) {
         ));
         peopleDocs = mergeDocs(peopleDocs, unSnap.docs);
       } catch(e3) {
-        console.warn('username query failed:', e3.code);
+        LOG.error('username query failed:', e3.code);
       }
 
-      // Client-side filter: ensure the term actually matches
+      // Client-side filter: ensure the term actually matches (or exact UID match)
       peopleDocs = peopleDocs.filter(d => {
+        if(looksLikeUid && d.id === trimmed) return true;
         const ud = d.data();
         return (ud.displayName||'').toLowerCase().includes(q_lower)
           || (ud.displayNameLower||'').includes(q_lower)
           || (ud.username||'').toLowerCase().includes(q_lower);
       });
+      LOG.search(`People query "${trimmed}" → ${peopleDocs.length} result(s)`);
 
       if(peopleDocs.length) {
         hasResults = true;

@@ -404,7 +404,7 @@ import { getAuth, onAuthStateChanged, signOut }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, collection, query, where, orderBy, limit,
-  updateDoc, arrayUnion, arrayRemove, addDoc, serverTimestamp, deleteDoc
+  updateDoc, arrayUnion, arrayRemove, addDoc, serverTimestamp, deleteDoc, increment
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const FIREBASE_CONFIG = {
@@ -431,6 +431,14 @@ let _targetUid = params.get('uid');
 let _user = null, _userData = null, _targetData = null;
 let _following = false, _activeTab = 'videos';
 let _pendingDeleteId = null, _pendingDeleteData = null;
+
+// ── Structured logging helpers ─────────────────────────────────────────────────
+const LOG = {
+  profile: (...a) => console.log('[Wave Profile]', ...a),
+  follow:  (...a) => console.log('[Wave Follow]',  ...a),
+  avatar:  (...a) => console.log('[Wave Avatar]',  ...a),
+  error:   (...a) => console.error('[Wave Profile]', ...a),
+};
 
 /* ─────────────────────────────────────────────────────────────
    Utility
@@ -461,14 +469,20 @@ function fmtTime(s) {
 ───────────────────────────────────────────────────────────── */
 async function loadProfile() {
   if (!_targetUid) { showNotFound(); return; }
+  LOG.profile('Loading profile uid=', _targetUid);
   try {
     const snap = await getDoc(doc(db, 'users', _targetUid));
-    if (!snap.exists()) { showNotFound(); return; }
+    if (!snap.exists()) {
+      LOG.error('Profile doc missing for uid=', _targetUid);
+      showNotFound();
+      return;
+    }
     _targetData = snap.data();
+    LOG.profile('Profile loaded:', _targetData.displayName || _targetData.username || _targetUid);
     renderProfile(_targetData);
     await loadVideos('videos');
   } catch(e) {
-    console.error('loadProfile:', e);
+    LOG.error('loadProfile failed:', e.code, e.message);
     showNotFound();
   }
 }
@@ -565,11 +579,13 @@ function updateFollowBtn() {
 
 $('btnFollow').addEventListener('click', async () => {
   if (!_user) { toast('Sign in to follow creators.'); return; }
-  // Prevent self-follow (belt-and-suspenders)
+  // Prevent self-follow
   if (_user.uid === _targetUid) return;
 
   const btn = $('btnFollow');
   btn.disabled = true;
+
+  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} viewer=${_user.uid} target=${_targetUid}`);
 
   try {
     const targetRef = doc(db, 'users', _targetUid);
@@ -577,14 +593,28 @@ $('btnFollow').addEventListener('click', async () => {
 
     if (_following) {
       /* ── UNFOLLOW ── */
-      await updateDoc(targetRef, { followers: arrayRemove(_user.uid) });
-      await updateDoc(myRef,     { following: arrayRemove(_targetUid) });
+      await updateDoc(targetRef, {
+        followers:     arrayRemove(_user.uid),
+        followerCount: increment(-1),
+      });
+      await updateDoc(myRef, {
+        following:      arrayRemove(_targetUid),
+        followingCount: increment(-1),
+      });
       _following = false;
+      LOG.follow('Unfollow complete');
     } else {
       /* ── FOLLOW ── */
-      await updateDoc(targetRef, { followers: arrayUnion(_user.uid) });
-      await updateDoc(myRef,     { following: arrayUnion(_targetUid) });
+      await updateDoc(targetRef, {
+        followers:     arrayUnion(_user.uid),
+        followerCount: increment(1),
+      });
+      await updateDoc(myRef, {
+        following:      arrayUnion(_targetUid),
+        followingCount: increment(1),
+      });
       _following = true;
+      LOG.follow('Follow complete — sending notification');
 
       // Send follow notification to the followed user
       await sendFollowNotification();
@@ -596,12 +626,15 @@ $('btnFollow').addEventListener('click', async () => {
     const fresh = await getDoc(targetRef);
     if (fresh.exists()) {
       const d   = fresh.data();
-      const cnt = Array.isArray(d.followers) ? d.followers.length : 0;
-      $('statFollowersNum').textContent = fmtNum(cnt);
+      // Prefer atomic counter if available; fall back to array length
+      const cnt = d.followerCount != null
+        ? d.followerCount
+        : (Array.isArray(d.followers) ? d.followers.length : 0);
+      $('statFollowersNum').textContent = fmtNum(Math.max(0, cnt));
     }
   } catch(e) {
-    console.error('follow error:', e);
-    toast('Error updating follow.');
+    LOG.error('Follow/unfollow error:', e.code, e.message);
+    toast(`Error updating follow. (${e.code || 'unknown'})`);
   } finally {
     btn.disabled = false;
   }
