@@ -304,7 +304,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import { getFirestore, doc, setDoc, getDoc, updateDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -314,7 +317,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -439,7 +442,10 @@ $('formSignIn').addEventListener('submit', async e => {
   const btn = $('btnSignIn');
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    // Repair/create Firestore profile for old or broken accounts before redirect
+    console.log('[Wave Auth] Sign-in success uid:', cred.user.uid, '— running ensureUserProfile');
+    await ensureUserProfile(cred.user, db);
     // onAuthStateChanged will redirect
   } catch(e) {
     showError(friendlyError(e));
@@ -538,31 +544,9 @@ $('btnGoogle').addEventListener('click', async () => {
   try {
     const provider = new GoogleAuthProvider();
     const cred = await signInWithPopup(auth, provider);
-    // Ensure user doc exists
-    const uid = cred.user.uid;
-    const userRef = doc(db, 'users', uid);
-    const existing = await getDoc(userRef);
-    if(!existing.exists()) {
-      const gDisplayName = cred.user.displayName || '';
-      await setDoc(userRef, {
-        uid,
-        displayName:      gDisplayName,
-        displayNameLower: gDisplayName.toLowerCase(),
-        username:         '',
-        email:            cred.user.email || '',
-        avatar:           cred.user.photoURL || '',
-        bio:              '',
-        role:             'member',
-        followers:        [],
-        following:        [],
-        followerCount:    0,
-        followingCount:   0,
-        isLive:           false,
-        liveRoomId:       null,
-        createdAt:        serverTimestamp(),
-        updatedAt:        serverTimestamp(),
-      });
-    }
+    // Create profile if missing, or repair any missing required fields on existing profile
+    console.log('[Wave Auth] Google sign-in uid:', cred.user.uid, '— running ensureUserProfile');
+    await ensureUserProfile(cred.user, db);
     // onAuthStateChanged will redirect
   } catch(e) {
     showError(friendlyError(e));

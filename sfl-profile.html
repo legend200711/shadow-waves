@@ -404,9 +404,13 @@ import { getAuth, onAuthStateChanged, signOut }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, collection, query, where, orderBy, limit,
-  updateDoc, arrayUnion, arrayRemove, addDoc, serverTimestamp, deleteDoc, increment
+  updateDoc, arrayUnion, arrayRemove, addDoc, serverTimestamp, deleteDoc, increment,
+  writeBatch
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -416,7 +420,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -468,13 +472,13 @@ function fmtTime(s) {
    Load profile
 ───────────────────────────────────────────────────────────── */
 async function loadProfile() {
-  if (!_targetUid) { showNotFound(); return; }
-  LOG.profile('Loading profile uid=', _targetUid);
+  if (!_targetUid) { showNotFound('no-uid'); return; }
+  LOG.profile('Loading uid:', _targetUid);
   try {
     const snap = await getDoc(doc(db, 'users', _targetUid));
     if (!snap.exists()) {
-      LOG.error('Profile doc missing for uid=', _targetUid);
-      showNotFound();
+      LOG.error('Profile doc missing for uid:', _targetUid, '(doc does not exist in Firestore)');
+      showNotFound('missing');
       return;
     }
     _targetData = snap.data();
@@ -482,14 +486,43 @@ async function loadProfile() {
     renderProfile(_targetData);
     await loadVideos('videos');
   } catch(e) {
-    LOG.error('loadProfile failed:', e.code, e.message);
-    showNotFound();
+    if (e.code === 'permission-denied' || e.code === 'PERMISSION_DENIED') {
+      LOG.error('Firestore permission denied for uid:', _targetUid, e.code);
+      showNotFound('permission');
+    } else if (e.code === 'unavailable' || e.code === 'resource-exhausted' || e.code === 'cancelled') {
+      LOG.error('Firestore network/service error for uid:', _targetUid, e.code, e.message);
+      showNotFound('network');
+    } else {
+      LOG.error('loadProfile failed uid:', _targetUid, e.code, e.message);
+      showNotFound('error');
+    }
   }
 }
 
-function showNotFound() {
+/**
+ * Show the "not found" / error state.
+ * @param {'missing'|'permission'|'network'|'error'|'no-uid'} reason
+ */
+function showNotFound(reason = 'missing') {
   $('profileLoader').classList.add('sfl-hidden');
-  $('profileNotFound').classList.remove('sfl-hidden');
+  const el = $('profileNotFound');
+  const titleEl = el.querySelector('.sfl-empty-title');
+  const subEl   = el.querySelector('.sfl-empty-sub');
+  if (reason === 'permission') {
+    if (titleEl) titleEl.textContent = 'Access denied';
+    if (subEl)   subEl.textContent   = 'You do not have permission to view this profile.';
+  } else if (reason === 'network') {
+    if (titleEl) titleEl.textContent = 'Could not load profile';
+    if (subEl)   subEl.textContent   = 'Network error. Please check your connection and refresh.';
+  } else if (reason === 'error') {
+    if (titleEl) titleEl.textContent = 'Could not load profile';
+    if (subEl)   subEl.textContent   = 'An unexpected error occurred. Please refresh the page.';
+  } else {
+    // 'missing' or 'no-uid'
+    if (titleEl) titleEl.textContent = 'Profile not found';
+    if (subEl)   subEl.textContent   = "This user doesn't exist or their account is private.";
+  }
+  el.classList.remove('sfl-hidden');
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -585,39 +618,55 @@ $('btnFollow').addEventListener('click', async () => {
   const btn = $('btnFollow');
   btn.disabled = true;
 
-  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} viewer=${_user.uid} target=${_targetUid}`);
+  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} currentUid=${_user.uid} targetUid=${_targetUid}`);
 
   try {
+    // Ensure current user's profile exists before following
+    await ensureUserProfile(_user, db);
+
     const targetRef = doc(db, 'users', _targetUid);
     const myRef     = doc(db, 'users', _user.uid);
 
+    // Verify target profile exists — never silently create a fake target
+    const targetSnap = await getDoc(targetRef);
+    if (!targetSnap.exists()) {
+      toast('Cannot follow: profile not found.');
+      LOG.follow('Target profile missing for uid:', _targetUid);
+      return;
+    }
+
+    // Use a writeBatch so both sides update atomically
+    const batch = writeBatch(db);
+
     if (_following) {
-      /* ── UNFOLLOW ── */
-      await updateDoc(targetRef, {
+      /* ── UNFOLLOW (atomic) ── */
+      batch.update(targetRef, {
         followers:     arrayRemove(_user.uid),
         followerCount: increment(-1),
       });
-      await updateDoc(myRef, {
+      batch.update(myRef, {
         following:      arrayRemove(_targetUid),
         followingCount: increment(-1),
       });
+      await batch.commit();
       _following = false;
-      LOG.follow('Unfollow complete');
+      LOG.follow('Unfollow complete currentUid:', _user.uid, '→ targetUid:', _targetUid);
     } else {
-      /* ── FOLLOW ── */
-      await updateDoc(targetRef, {
+      /* ── FOLLOW (atomic) ── */
+      batch.update(targetRef, {
         followers:     arrayUnion(_user.uid),
         followerCount: increment(1),
       });
-      await updateDoc(myRef, {
+      batch.update(myRef, {
         following:      arrayUnion(_targetUid),
         followingCount: increment(1),
       });
+      await batch.commit();
       _following = true;
-      LOG.follow('Follow complete — sending notification');
+      LOG.follow('Follow complete currentUid:', _user.uid, '→ targetUid:', _targetUid);
 
-      // Send follow notification to the followed user
-      await sendFollowNotification();
+      // Send follow notification to the followed user (non-critical)
+      sendFollowNotification().catch(() => {});
     }
 
     updateFollowBtn();
@@ -626,7 +675,7 @@ $('btnFollow').addEventListener('click', async () => {
     const fresh = await getDoc(targetRef);
     if (fresh.exists()) {
       const d   = fresh.data();
-      // Prefer atomic counter if available; fall back to array length
+      // Prefer atomic counter; fall back to array length
       const cnt = d.followerCount != null
         ? d.followerCount
         : (Array.isArray(d.followers) ? d.followers.length : 0);
@@ -686,17 +735,39 @@ async function openFollowModal(type) {
       return;
     }
 
-    // Fetch user docs in batches of 30 (Firestore 'in' limit)
-    const batches = [];
-    for (let i = 0; i < uidList.length; i += 30) {
-      batches.push(uidList.slice(i, i + 30));
-    }
-
+    // ── Resolve each UID by direct document-ID lookup ────────────────────────
+    // We do NOT use where('uid','in',[...]) because older profiles may not have
+    // the uid field on the document even though the document ID is correct.
+    // Direct getDoc(doc(db,'users',uid)) always works as long as the document exists.
     const userMap = {};
-    for (const batch of batches) {
-      const q    = query(collection(db, 'users'), where('uid', 'in', batch));
-      const docs = await getDocs(q);
-      docs.forEach(d => { userMap[d.id] = d.data(); });
+    const repairBatch = writeBatch(db);
+    let needsRepairCommit = false;
+
+    await Promise.all(
+      uidList.map(async uid => {
+        try {
+          const udoc = await getDoc(doc(db, 'users', uid));
+          if (udoc.exists()) {
+            const udata = udoc.data();
+            // Repair uid field if missing (document ID is correct UID)
+            if (!udata.uid) {
+              repairBatch.update(doc(db, 'users', uid), { uid });
+              needsRepairCommit = true;
+              console.log('[Wave Profile Repair] uid field missing on', uid, '— repairing');
+            }
+            userMap[uid] = { uid, ...udata };
+          } else {
+            console.warn('[Wave Follow] UID in list has no Firestore profile:', uid);
+          }
+        } catch(uerr) {
+          console.warn('[Wave Follow] Could not load profile for uid:', uid, uerr.code);
+        }
+      })
+    );
+
+    // Commit any uid-field repairs found above
+    if (needsRepairCommit) {
+      repairBatch.commit().catch(e => console.warn('[Wave Profile Repair] batch commit failed:', e.code));
     }
 
     // Build rows
@@ -752,27 +823,31 @@ async function openFollowModal(type) {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         if (!_user) { toast('Sign in to follow.'); return; }
-        const targetUid   = btn.dataset.uid;
+        const targetUid    = btn.dataset.uid;
         const wasFollowing = btn.dataset.following === 'true';
         btn.disabled = true;
+        LOG.follow(`Modal ${wasFollowing ? 'Unfollow' : 'Follow'} currentUid=${_user.uid} targetUid=${targetUid}`);
         try {
-          const tRef = doc(db, 'users', targetUid);
-          const mRef = doc(db, 'users', _user.uid);
+          const tRef  = doc(db, 'users', targetUid);
+          const mRef  = doc(db, 'users', _user.uid);
+          const mBatch = writeBatch(db);
           if (wasFollowing) {
-            await updateDoc(tRef, { followers: arrayRemove(_user.uid) });
-            await updateDoc(mRef, { following: arrayRemove(targetUid) });
+            mBatch.update(tRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
+            mBatch.update(mRef, { following: arrayRemove(targetUid), followingCount: increment(-1) });
+            await mBatch.commit();
             btn.textContent = 'Follow';
             btn.className = 'sfl-btn sfl-btn-sm sfl-btn-primary modal-follow-btn';
             btn.dataset.following = 'false';
             myFollowingSet.delete(targetUid);
           } else {
-            await updateDoc(tRef, { followers: arrayUnion(_user.uid) });
-            await updateDoc(mRef, { following: arrayUnion(targetUid) });
+            mBatch.update(tRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
+            mBatch.update(mRef, { following: arrayUnion(targetUid), followingCount: increment(1) });
+            await mBatch.commit();
             btn.textContent = '✓ Following';
             btn.className = 'sfl-btn sfl-btn-sm is-following sfl-btn-outline modal-follow-btn';
             btn.dataset.following = 'true';
             myFollowingSet.add(targetUid);
-            // Notify the followed user
+            // Notify the followed user (non-critical)
             if (_user && targetUid !== _user.uid) {
               const myName   = snxGetDisplayName(_userData, _user);
               const myAvatar = _userData?.avatar || _user.photoURL || '';
@@ -790,6 +865,7 @@ async function openFollowModal(type) {
             updateFollowBtn();
           }
         } catch(err) {
+          LOG.error('Modal follow error:', err.code, err.message);
           toast('Error updating follow.');
         } finally {
           btn.disabled = false;
@@ -968,48 +1044,11 @@ $('sidebarLogout')?.addEventListener('click', async () => {
 ───────────────────────────────────────────────────────────── */
 onAuthStateChanged(auth, async user => {
   _user = user;
-  if (user) {
-    try {
-      const snap = await getDoc(doc(db, 'users', user.uid));
-      if (snap.exists()) {
-        _userData = snap.data();
-        // Backfill displayNameLower for existing accounts that pre-date this field.
-        if (!_userData.displayNameLower && _userData.displayName) {
-          updateDoc(doc(db, 'users', user.uid), {
-            displayNameLower: _userData.displayName.toLowerCase(),
-          }).catch(e => console.warn('[Wave] displayNameLower backfill failed:', e.code));
-        }
-      } else if (!user.isAnonymous) {
-        // Profile doc missing — create it from Auth data so the user never
-        // appears as "Unknown" on their own profile or elsewhere.
-        const fallbackName = user.displayName || user.email?.split('@')[0] || 'Wave User';
-        const profileData = {
-          uid:              user.uid,
-          displayName:      fallbackName,
-          displayNameLower: fallbackName.toLowerCase(),
-          username:         '',
-          email:            user.email || '',
-          avatar:           user.photoURL || '',
-          bio:              '',
-          role:             'member',
-          followers:        [],
-          following:        [],
-          followerCount:    0,
-          followingCount:   0,
-          isLive:           false,
-          liveRoomId:       null,
-          createdAt:        serverTimestamp(),
-          updatedAt:        serverTimestamp(),
-        };
-        try {
-          await setDoc(doc(db, 'users', user.uid), profileData);
-          _userData = profileData;
-        } catch(healErr) {
-          console.error('[Wave] Profile self-heal failed:', healErr.code, healErr.message);
-        }
-      }
-    } catch(e) {}
-
+  if (user && !user.isAnonymous) {
+    console.log('[Wave Auth] Auth state: uid =', user.uid);
+    // ensureUserProfile creates or repairs the Firestore profile for this user
+    const repaired = await ensureUserProfile(user, db);
+    _userData = repaired || {};
   }
   // If no uid param, show current user's profile
   if (!_targetUid) {

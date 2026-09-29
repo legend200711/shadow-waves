@@ -246,9 +246,13 @@ import { getAuth, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   getFirestore, collection, query, where, orderBy, limit,
-  getDocs, onSnapshot, doc, getDoc, updateDoc, arrayUnion, arrayRemove, increment
+  getDocs, onSnapshot, doc, getDoc, updateDoc, arrayUnion, arrayRemove, increment,
+  writeBatch
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -258,7 +262,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -465,26 +469,42 @@ async function handleFollowToggle(btn) {
   if(!uid || uid === _user.uid) return;
   btn.disabled = true;
   const wasFollowing = btn.classList.contains('is-following');
-  LOG.follow(`${wasFollowing ? 'Unfollow' : 'Follow'} viewer=${_user.uid} target=${uid}`);
+  LOG.follow(`${wasFollowing ? 'Unfollow' : 'Follow'} currentUid=${_user.uid} targetUid=${uid}`);
   try {
+    // Ensure current user's profile exists before following
+    await ensureUserProfile(_user, db);
+
     const targetRef = doc(db, 'users', uid);
     const myRef     = doc(db, 'users', _user.uid);
+
+    // Verify target profile exists
+    const targetSnap = await getDoc(targetRef);
+    if (!targetSnap.exists()) {
+      toast('Cannot follow: profile not found.');
+      LOG.follow('Target profile missing for uid:', uid);
+      return;
+    }
+
+    // Atomic batch write
+    const batch = writeBatch(db);
     if(wasFollowing) {
-      await updateDoc(targetRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
-      await updateDoc(myRef,     { following: arrayRemove(uid),        followingCount: increment(-1) });
+      batch.update(targetRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
+      batch.update(myRef,     { following: arrayRemove(uid),        followingCount: increment(-1) });
+      await batch.commit();
       _followState[uid] = false;
       btn.textContent = 'Follow';
       btn.className   = 'sfl-btn sfl-btn-sm sfl-btn-primary srch-follow-btn';
       btn.setAttribute('aria-label', 'Follow');
-      LOG.follow('Unfollow complete');
+      LOG.follow('Unfollow complete currentUid:', _user.uid, '→ targetUid:', uid);
     } else {
-      await updateDoc(targetRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
-      await updateDoc(myRef,     { following: arrayUnion(uid),        followingCount: increment(1) });
+      batch.update(targetRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
+      batch.update(myRef,     { following: arrayUnion(uid),        followingCount: increment(1) });
+      await batch.commit();
       _followState[uid] = true;
       btn.textContent = '✓ Following';
       btn.className   = 'sfl-btn sfl-btn-sm sfl-btn-outline srch-follow-btn is-following';
       btn.setAttribute('aria-label', 'Following — click to unfollow');
-      LOG.follow('Follow complete');
+      LOG.follow('Follow complete currentUid:', _user.uid, '→ targetUid:', uid);
     }
   } catch(e) {
     LOG.error('Follow toggle error:', e.code, e.message);
@@ -849,7 +869,14 @@ if(urlQ) {
   runSearch(urlQ, 'all');
 }
 
-onAuthStateChanged(auth, u => { _user = u; });
+onAuthStateChanged(auth, async u => {
+  _user = u;
+  if (u && !u.isAnonymous) {
+    console.log('[Wave Auth] Search page auth state: uid =', u.uid);
+    // Repair/create Firestore profile for this user on every auth event
+    ensureUserProfile(u, db).catch(e => console.warn('[Wave Search] ensureUserProfile error:', e?.code));
+  }
+});
 loadDefault();
 </script>
 

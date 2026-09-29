@@ -449,8 +449,9 @@ import { getAuth, onAuthStateChanged }
 import {
   getFirestore, doc, getDoc, collection, addDoc, query, orderBy, limit, getDocs,
   onSnapshot, updateDoc, increment, serverTimestamp, where, arrayUnion, arrayRemove,
-  deleteDoc
+  deleteDoc, writeBatch
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
 // ── Structured logging ──────────────────────────────────────────────────────────
 const LOG = {
@@ -462,6 +463,8 @@ const LOG = {
 // Track creator UID for follow operations
 let _creatorUid = null;
 
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -471,7 +474,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -735,18 +738,33 @@ document.getElementById('btnFollow').addEventListener('click', async () => {
 
   const creatorRef = doc(db, 'users', creatorId);
   const myRef      = doc(db, 'users', _user.uid);
-  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} viewer=${_user.uid} creator=${creatorId}`);
+  LOG.follow(`${_following ? 'Unfollow' : 'Follow'} currentUid=${_user.uid} creatorUid=${creatorId}`);
   try {
+    // Ensure current user profile exists before following
+    await ensureUserProfile(_user, db);
+
+    // Verify creator profile exists
+    const creatorSnap = await getDoc(creatorRef);
+    if (!creatorSnap.exists()) {
+      toast('Cannot follow: creator profile not found.');
+      LOG.follow('Creator profile missing for uid:', creatorId);
+      return;
+    }
+
+    // Atomic batch write
+    const batch = writeBatch(db);
     if (_following) {
-      await updateDoc(creatorRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
-      await updateDoc(myRef,      { following: arrayRemove(creatorId),  followingCount: increment(-1) });
+      batch.update(creatorRef, { followers: arrayRemove(_user.uid), followerCount: increment(-1) });
+      batch.update(myRef,      { following: arrayRemove(creatorId),  followingCount: increment(-1) });
+      await batch.commit();
       _following = false;
-      LOG.follow('Unfollow complete');
+      LOG.follow('Unfollow complete currentUid:', _user.uid, '→ creatorUid:', creatorId);
     } else {
-      await updateDoc(creatorRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
-      await updateDoc(myRef,      { following: arrayUnion(creatorId),  followingCount: increment(1) });
+      batch.update(creatorRef, { followers: arrayUnion(_user.uid), followerCount: increment(1) });
+      batch.update(myRef,      { following: arrayUnion(creatorId),  followingCount: increment(1) });
+      await batch.commit();
       _following = true;
-      LOG.follow('Follow complete');
+      LOG.follow('Follow complete currentUid:', _user.uid, '→ creatorUid:', creatorId);
 
       // Send follow notification
       const myName   = snxGetDisplayName(_userData, _user);
@@ -916,11 +934,10 @@ async function loadRelated(category, creatorId) {
 /* ── Auth ── */
 onAuthStateChanged(auth, async user => {
   _user = user;
-  if(user) {
-    try {
-      const snap = await getDoc(doc(db,'users',user.uid));
-      if(snap.exists()) _userData = snap.data();
-    } catch(e) {}
+  if(user && !user.isAnonymous) {
+    console.log('[Wave Auth] Player page auth state: uid =', user.uid);
+    const repaired = await ensureUserProfile(user, db).catch(() => null);
+    _userData = repaired || _userData || {};
     $('myAvatar').src = _userData?.avatar || user.photoURL || '';
     $('myAvatar').style.display = (_userData?.avatar || user.photoURL) ? '' : 'none';
     $('commentInputRow').style.display = 'flex';

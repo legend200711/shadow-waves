@@ -433,8 +433,11 @@ import {
   getFirestore, collection, query, where, orderBy, limit,
   getDocs, onSnapshot, doc, getDoc, setDoc, updateDoc, Timestamp, deleteDoc, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
-/* ── Reuse existing Firebase config ── */
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
+/* ── Firebase config ── */
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:        'shadow-nexus-wave.firebaseapp.com',
@@ -445,7 +448,7 @@ const FIREBASE_CONFIG = {
   appId:             '1:68850298302:web:603bbb8539079903cb1def'
 };
 
-const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -751,49 +754,11 @@ onAuthStateChanged(auth, async user => {
   _user = user;
   $('authWall').classList.toggle('sfl-hidden', !!user);
 
-  if (user) {
-    try {
-      const snap = await getDoc(doc(db,'users',user.uid));
-      if (snap.exists()) {
-        _userData = snap.data();
-        // Backfill displayNameLower for existing accounts that pre-date this field.
-        // Without it, the search index can't find the user.
-        if (!_userData.displayNameLower && _userData.displayName) {
-          updateDoc(doc(db, 'users', user.uid), {
-            displayNameLower: _userData.displayName.toLowerCase(),
-          }).catch(e => console.warn('[Wave] displayNameLower backfill failed:', e.code));
-        }
-      } else if (!user.isAnonymous) {
-        // Profile doc missing for an authenticated user — create it now.
-        // This fixes the "Unknown" case for accounts whose profile write was
-        // interrupted during registration or never completed.
-        const fallbackName = user.displayName || user.email?.split('@')[0] || 'Wave User';
-        const profileData = {
-          uid:              user.uid,
-          displayName:      fallbackName,
-          displayNameLower: fallbackName.toLowerCase(),
-          username:         '',
-          email:            user.email || '',
-          avatar:           user.photoURL || '',
-          bio:              '',
-          role:             'member',
-          followers:        [],
-          following:        [],
-          followerCount:    0,
-          followingCount:   0,
-          isLive:           false,
-          liveRoomId:       null,
-          createdAt:        serverTimestamp(),
-          updatedAt:        serverTimestamp(),
-        };
-        try {
-          await setDoc(doc(db, 'users', user.uid), profileData);
-          _userData = profileData;
-        } catch(healErr) {
-          console.error('[Wave] Profile self-heal failed:', healErr.code, healErr.message);
-        }
-      }
-    } catch(e) {}
+  if (user && !user.isAnonymous) {
+    console.log('[Wave Auth] Home page auth state: uid =', user.uid);
+    // ensureUserProfile creates or repairs the Firestore profile for this user
+    const repaired = await ensureUserProfile(user, db);
+    _userData = repaired || {};
     loadNotifCount(user.uid);
     // Update profile links
     const name = snxGetDisplayName(_userData, user);

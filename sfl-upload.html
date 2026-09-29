@@ -396,10 +396,13 @@ import { snxGetDisplayName } from './snx-profile.js';
 import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
 import { getAuth, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, doc, updateDoc, serverTimestamp }
+import { getFirestore, collection, addDoc, doc, updateDoc, serverTimestamp, getDoc }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
 // ── Firebase config (auth + Firestore only — video files go to Cloudflare Stream) ──
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -409,7 +412,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -473,11 +476,20 @@ onAuthStateChanged(auth, async u => {
   _user = u;
   if (!u) { $('authGate').classList.remove('sfl-hidden'); return; }
   $('authGate').classList.add('sfl-hidden');
+  if (!u.isAnonymous) {
+    console.log('[Wave Auth] Upload page auth state: uid =', u.uid);
+    // Repair/create profile; also loads the profile data we need below
+    const repaired = await ensureUserProfile(u, db).catch(e => {
+      console.warn('[Wave Auth] ensureUserProfile error:', e?.code);
+      return null;
+    });
+    if (repaired) { _userData = repaired; return; }
+  }
+  // Fallback: just read the doc
   try {
-    const { getDoc, doc: firestoreDoc } = await import('https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js');
-    const snap = await getDoc(firestoreDoc(db,'users',u.uid));
+    const snap = await getDoc(doc(db, 'users', u.uid));
     if (snap.exists()) _userData = snap.data();
-  } catch(e) { console.warn('[SFL] User profile fetch failed (non-critical):', e.message); }
+  } catch(e) { console.warn('[Wave Upload] User profile fetch failed (non-critical):', e.message); }
 });
 
 /* ── Stage UI helpers ── */

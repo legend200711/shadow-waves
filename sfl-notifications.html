@@ -128,7 +128,10 @@ import {
   getFirestore, collection, query, orderBy, limit, onSnapshot,
   doc, updateDoc, writeBatch, getDocs, where
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
 
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:'shadow-nexus-wave.firebaseapp.com',
@@ -138,7 +141,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:'1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -237,10 +240,15 @@ async function markAllRead() {
 $('markAllReadDesktop').addEventListener('click', markAllRead);
 $('markAllRead').addEventListener('click', markAllRead);
 
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   _user = user;
   $('notifLoader').classList.remove('sfl-hidden');
   $('notifAuthWall').classList.add('sfl-hidden');
+  if (user && !user.isAnonymous) {
+    console.log('[Wave Auth] Notifications page auth state: uid =', user.uid);
+    // Repair/create Firestore profile on every page load
+    ensureUserProfile(user, db).catch(e => console.warn('[Wave Auth] ensureUserProfile error:', e?.code));
+  }
   if(!user) {
     $('notifLoader').classList.add('sfl-hidden');
     $('notifAuthWall').classList.remove('sfl-hidden');

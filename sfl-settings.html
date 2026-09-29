@@ -906,6 +906,10 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, updateDoc, setDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { ensureUserProfile } from './wave-profile-utils.js';
+
+// ── Always use the named 'shadow-nexus-wave' app to avoid collisions ──────────
+const _SNW_APP_NAME = 'shadow-nexus-wave';
 const FIREBASE_CONFIG = {
   apiKey:           'AIzaSyBO4IIDLMp-SKgBaA3RINsYaj-UELLUXZE',
   authDomain:       'shadow-nexus-wave.firebaseapp.com',
@@ -915,7 +919,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId:'68850298302',
   appId:            '1:68850298302:web:603bbb8539079903cb1def'
 };
-const app  = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
+const app  = getApps().find(a => a.name === _SNW_APP_NAME) ?? initializeApp(FIREBASE_CONFIG, _SNW_APP_NAME);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
@@ -1006,8 +1010,15 @@ onAuthStateChanged(auth, async user => {
   if (!user) { window.location.href = 'sfl-login.html'; return; }
   _currentUser = user;
   try {
-    const snap = await getDoc(doc(db, 'users', user.uid));
-    _userData = snap.exists() ? snap.data() : {};
+    // Ensure/repair Firestore profile for this user on every settings page load
+    if (!user.isAnonymous) {
+      console.log('[Wave Auth] Settings page auth state: uid =', user.uid);
+      const repaired = await ensureUserProfile(user, db);
+      _userData = repaired || {};
+    } else {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      _userData = snap.exists() ? snap.data() : {};
+    }
     $('settingsDisplayName').textContent = snxGetDisplayName(_userData, user);
     $('settingsUserEmail').textContent   = user.email || '';
     // Profile section sub-label
