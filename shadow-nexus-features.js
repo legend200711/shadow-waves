@@ -107,7 +107,7 @@ async function snxf_loadXPStrip(elementId) {
     const lvl  = d.level || 1;
     const xp   = d.experience || 0;
     const pct  = _xpPercent(xp, lvl);
-    const name = cleanText((window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || 'User'))(window._snxUserData, user));
+    const name = cleanText((window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || p?.email?.split('@')[0]?.trim() || 'Wave User'))(window._snxUserData, user));
     el.innerHTML = `
       <div class="snxf-xp-avatar">${window._snxUserData?.avatar || '🌑'}</div>
       <div class="snxf-xp-info">

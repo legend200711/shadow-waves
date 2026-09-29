@@ -417,7 +417,7 @@
       row.innerHTML = `
         <div class="cohost-user-avatar" style="${avatarBg}">${avatarBg ? '' : initials}</div>
         <div style="flex:1;min-width:0;">
-          <div class="cohost-user-name">${_esc((window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || 'User'))(f))}</div>
+          <div class="cohost-user-name">${_esc((window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || d?.email?.split('@')[0]?.trim() || 'Wave User'))(f))}</div>
           <div class="cohost-user-status">
             <span class="cohost-status-dot ${statusCls}"></span>
             <span class="cohost-status-label">${statusLabel}</span>
@@ -485,7 +485,7 @@
 
       // ── Check 2: friend allows co-host invites ──
       if (friendData.allowCoHostInvites === false) {
-        _liveToast(`${(window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || 'User'))(friend)} has disabled co-host invites.`);
+        _liveToast(`${(window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || d?.email?.split('@')[0]?.trim() || 'Wave User'))(friend)} has disabled co-host invites.`);
         _resetInviteBtn(btns);
         return;
       }
@@ -507,8 +507,8 @@
       }
 
       // ── All checks passed — write RTDB invite first (instant delivery) ──
-      const _resolveName = window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || 'User');
-      const _resolveDataName = window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || 'User');
+      const _resolveName = window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || p?.email?.split('@')[0]?.trim() || 'Wave User');
+      const _resolveDataName = window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || d?.email?.split('@')[0]?.trim() || 'Wave User');
       await rtSet(rtRef(_liveDB, `cohosts/${_roomId}/requests/${friend.uid}`), {
         from:       _user.uid,
         fromName:   _resolveName(_userData, _user),
@@ -654,7 +654,7 @@
       Object.entries(data).forEach(([uid, req]) => {
         if (req.status === 'denied' && !_notifiedSet.has(uid)) {
           _notifiedSet.add(uid);
-          _liveToast(`${req.toName || 'User'} declined the co-host invite.`);
+          _liveToast(`${req.toName || 'Wave User'} declined the co-host invite.`);
           // Mark in RTDB so it won't re-fire if the listener re-runs
           rtUpdate(rtRef(_liveDB, `cohosts/${_roomId}/requests/${uid}`), {
             _hostNotified: true,

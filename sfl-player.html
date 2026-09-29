@@ -848,7 +848,7 @@ function buildComment(id, data) {
   div.innerHTML = `
     ${avatar}
     <div class="comment-content">
-      <div class="comment-author">${data.authorName||'User'}</div>
+      <div class="comment-author">${data.authorName||'Wave User'}</div>
       <div class="comment-text">${escHtml(data.text||'')}</div>
       <div class="comment-meta">${timeAgo(data.createdAt)}</div>
     </div>

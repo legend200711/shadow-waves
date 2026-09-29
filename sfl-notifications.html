@@ -204,7 +204,7 @@ function buildNotif(id, data) {
 }
 
 function buildNotifText(data) {
-  const from = data.fromName ? `<strong>${data.fromName}</strong>` : 'User';
+  const from = data.fromName ? `<strong>${data.fromName}</strong>` : '<strong>Wave User</strong>';
   switch(data.type) {
     case 'follow':        return `${from} started following you`;
     case 'like':          return `${from} liked your video`;

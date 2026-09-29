@@ -495,7 +495,7 @@ function buildVideoCard(id, data) {
       ${avatar}
       <div class="sfl-video-meta">
         <div class="sfl-video-title">${data.title || 'Untitled'}</div>
-        <div class="sfl-video-creator-name sfl-truncate">${data.creatorName || 'User'}</div>
+        <div class="sfl-video-creator-name sfl-truncate">${data.creatorName || data.creatorDisplayName || 'Wave User'}</div>
         <div class="sfl-video-stats">
           ${views ? `<span>${views}</span>` : ''}
           ${likes ? `<span>${likes}</span>` : ''}

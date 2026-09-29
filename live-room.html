@@ -1062,7 +1062,7 @@ async function _startViewerSession() {
   // Update UI
   if (D.roomTitle) D.roomTitle.textContent  = roomData.title    || 'Shadow Nexus Wave';
   if (D.hostName)  D.hostName.textContent   = roomData.hostName || roomData.hostUsername || '';
-  if (D.box1Name)  D.box1Name.textContent   = roomData.hostName || roomData.hostUsername || 'User';
+  if (D.box1Name)  D.box1Name.textContent   = roomData.hostName || roomData.hostUsername || '';
 
   // Viewer presence in RTDB (auto-removed on disconnect)
   _viewerPresRef = ref(_rtdb, `livePresence/${_roomId}/viewers/${_user.uid}`);
@@ -1409,7 +1409,7 @@ function _renderChatMsg(data) {
 
   const author = document.createElement('span');
   author.className = 'lr-chat-author' + (data.isHost ? ' is-host' : '');
-  author.textContent = _esc(data.username || data.name || 'User') + ':';
+  author.textContent = _esc(data.username || data.name || 'Wave User') + ':';
 
   const text = document.createElement('span');
   text.textContent = ' ' + (data.message || '');

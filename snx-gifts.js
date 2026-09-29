@@ -563,7 +563,7 @@ async function snxgSendGift() {
   const senderId     = user.uid;
   // Prefer Firestore profile name (most up-to-date) over Auth displayName
   const _snxgProfile = window._snxUserData || null;
-  const senderName   = (window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || 'User'))(_snxgProfile, user);
+  const senderName   = (window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || p?.email?.split('@')[0]?.trim() || 'Wave User'))(_snxgProfile, user);
   const senderAvatar = user.photoURL    || '';
 
   // 90/10 split — remainder avoids float drift
@@ -1144,7 +1144,7 @@ async function snxgLoadGiftHistory() {
         <div class="cs-gift-item-info">
           <div class="cs-gift-item-name">${g.giftName || 'Gift'}</div>
           <div class="cs-gift-item-meta">
-            From <strong style="color:#c8e8ff;">${g.senderName || 'User'}</strong> &middot; ${dateStr}
+            From <strong style="color:#c8e8ff;">${g.senderName || 'Wave User'}</strong> &middot; ${dateStr}
           </div>
         </div>
         <div class="cs-gift-item-earn">
@@ -1440,7 +1440,7 @@ function snxgWatchLiveGifts(roomId) {
     snap.docChanges().forEach(change => {
       if (change.type !== 'added') return;
       const g = change.doc.data();
-      window.snxgShowLiveGiftToast(g.senderName || 'User', g.giftId);
+      window.snxgShowLiveGiftToast(g.senderName || 'Wave User', g.giftId);
     });
   });
 
@@ -1531,7 +1531,7 @@ async function _ctgDoSearch(query) {
         onmouseout="this.style.borderColor='rgba(0,174,239,0.15)'">
         <img src="${u.photoURL||''}" onerror="this.src=''" style="width:32px;height:32px;border-radius:50%;object-fit:cover;background:#0a1a3a;">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#c8e8ff;">${(window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || 'User'))(u)}</div>
+          <div style="font-size:13px;font-weight:700;color:#c8e8ff;">${(window.snxGetNameFromData || (d => d?.displayName?.trim() || d?.username?.trim() || d?.email?.split('@')[0]?.trim() || 'Wave User'))(u)}</div>
           <div style="font-size:10px;color:#4a7a9a;font-family:monospace;">${u.uid||u.id}</div>
         </div>
       </div>

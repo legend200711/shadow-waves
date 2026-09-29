@@ -1537,7 +1537,7 @@ function creatorRowHtml(u, rank) {
     <div class="fp-creator-rank ${rankClass}">${rank}</div>
     ${avatarHtml}
     <div class="fp-creator-info">
-      <div class="fp-creator-name">${esc(u.displayName||u.username||'User')}</div>
+      <div class="fp-creator-name">${esc(u.displayName||u.username||u.email?.split('@')[0]||'Wave User')}</div>
       <div class="fp-creator-meta">${u.username ? '@'+esc(u.username) : esc(u.id.slice(0,12))}</div>
     </div>
     <div class="fp-creator-stat">${fmtNum(followers)} followers</div>
@@ -1608,7 +1608,7 @@ function renderUsers(users) {
         <div style="display:flex;align-items:center;gap:8px;">
           ${u.avatar ? `<img class="fp-user-avatar" src="${esc(u.avatar)}" alt="">` : '<div class="fp-user-avatar" style="display:flex;align-items:center;justify-content:center;font-size:14px;">👤</div>'}
           <div>
-            <div style="font-weight:700;">${esc(u.displayName||u.username||'User')}</div>
+            <div style="font-weight:700;">${esc(u.displayName||u.username||u.email?.split('@')[0]||'Wave User')}</div>
             <div class="fp-uid">${esc(u.id)}</div>
           </div>
         </div>
@@ -1618,9 +1618,9 @@ function renderUsers(users) {
       <td style="color:#5a7fa0;font-size:12px;">${joined}</td>
       <td>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${!isCurrentFounder && canSuspend ? `<button class="fp-btn fp-btn-sm fp-btn-outline" onclick="openRoleModal('${esc(u.id)}','${esc((u.displayName||u.username||'User'))}','${role}')">Role</button>` : ''}
-          ${role === 'suspended' ? `<button class="fp-btn fp-btn-sm" style="background:rgba(74,222,128,0.12);border-color:rgba(74,222,128,0.3);color:#4ade80;" onclick="confirmRestore('${esc(u.id)}','${esc((u.displayName||u.username||'User'))}')">Restore</button>` : ''}
-          ${!isCurrentFounder && role !== 'suspended' ? `<button class="fp-btn fp-btn-sm fp-btn-danger" onclick="confirmSuspend('${esc(u.id)}','${esc((u.displayName||u.username||'User'))}')">Suspend</button>` : ''}
+          ${!isCurrentFounder && canSuspend ? `<button class="fp-btn fp-btn-sm fp-btn-outline" onclick="openRoleModal('${esc(u.id)}','${esc((u.displayName||u.username||u.email?.split('@')[0]||'Wave User'))}','${role}')">Role</button>` : ''}
+          ${role === 'suspended' ? `<button class="fp-btn fp-btn-sm" style="background:rgba(74,222,128,0.12);border-color:rgba(74,222,128,0.3);color:#4ade80;" onclick="confirmRestore('${esc(u.id)}','${esc((u.displayName||u.username||u.email?.split('@')[0]||'Wave User'))}')">Restore</button>` : ''}
+          ${!isCurrentFounder && role !== 'suspended' ? `<button class="fp-btn fp-btn-sm fp-btn-danger" onclick="confirmSuspend('${esc(u.id)}','${esc((u.displayName||u.username||u.email?.split('@')[0]||'Wave User'))}')">Suspend</button>` : ''}
           <a href="sfl-profile.html?uid=${esc(u.id)}" target="_blank" class="fp-btn fp-btn-sm fp-btn-ghost">View</a>
         </div>
       </td>

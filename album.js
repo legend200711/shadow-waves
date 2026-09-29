@@ -1325,7 +1325,7 @@
         try {
             await addDoc(collection(db, 'albumPhotos', photo.id, 'comments'), {
                 authorUid:  user.uid,
-                authorName: (window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || 'User'))(userData, user),
+                authorName: (window.snxGetDisplayName || ((p, u) => p?.displayName?.trim() || p?.username?.trim() || u?.displayName?.trim() || u?.email?.split('@')[0]?.trim() || p?.email?.split('@')[0]?.trim() || 'Wave User'))(userData, user),
                 text,
                 createdAt:  Date.now(),
             });

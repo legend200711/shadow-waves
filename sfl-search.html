@@ -420,7 +420,7 @@ function buildVideoCard(id, data) {
         : `<div class="sfl-video-creator-avatar sfl-avatar sfl-avatar-sm" style="display:flex;align-items:center;justify-content:center;font-size:12px;">👤</div>`}
       <div class="sfl-video-meta">
         <div class="sfl-video-title">${esc(data.title||'Untitled')}</div>
-        <div class="sfl-video-creator-name sfl-truncate">${esc(data.creatorName || 'User')}</div>
+        <div class="sfl-video-creator-name sfl-truncate">${esc(data.creatorName || data.creatorDisplayName || 'Wave User')}</div>
         <div class="sfl-video-stats">
           <span>${fmtNum(data.views||0)} views</span>
           <span>${timeAgo(data.createdAt)}</span>
